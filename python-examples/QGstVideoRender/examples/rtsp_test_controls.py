@@ -11,11 +11,13 @@ gi.require_version("Gst", "1.0")
 gi.require_version("GstRtsp", "1.0")
 gi.require_version("GstRtspServer", "1.0")
 
-from PyQt5.QtCore import QUrl
+from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import QMainWindow, QWidget, QApplication, QVBoxLayout, QPushButton
 import sys
+from datetime import date
+import time
 
 import gi
 gi.require_version('Gst', '1.0')
@@ -115,17 +117,14 @@ class VideoWindow(QMainWindow):
         self.server.attach(None)
         self.mount_point = "feed"
 
-        # media_factory = ARtspMediaFactory.custom_pipeline_factory(self.player)
-        media_factory = ARtspMediaFactory(port=self.RTSP_SERVER_PORT)
-        media_factory.set_shared(True)
-        # rtsp_url = GstRtsp.RTSPUrl()
-        # rtsp_url.set_port(8554)
+        self.media_factory = ARtspMediaFactory(port=self.RTSP_SERVER_PORT)
+        self.media_factory.set_shared(True)
         self.player.set_state(Gst.State.PLAYING)
-        self.server.get_mount_points().add_factory(f"/{self.mount_point}", media_factory)
+        self.server.get_mount_points().add_factory(f"/{self.mount_point}", self.media_factory)
         self.server.attach(None)
 
-        url = f"rtsp://127.0.0.1:{self.RTSP_SERVER_PORT}/{self.mount_point}"
-        self.textoverlay.set_property("text", f"{url}")
+        self.url = f"rtsp://127.0.0.1:{self.RTSP_SERVER_PORT}/{self.mount_point}"
+        self.textoverlay.set_property("text", f"{self.url}")
         self.player = QMediaPlayer(None, QMediaPlayer.VideoSurface)
         video_widget = QVideoWidget()
         self.player.setVideoOutput(video_widget)
@@ -136,19 +135,50 @@ class VideoWindow(QMainWindow):
         self.pb_start.clicked.connect(self.on_start)
         w.layout().addWidget(self.pb_start)
 
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.on_timeout)
+        self.timer.start(1000)
+
     def on_start(self):
         print(f"Enable server: {self.pb_start.isChecked()}")
         if self.pb_start.isChecked():
+            self.pb_start.setText("Stop server")
             self.play()
+        else:
+            self.pb_start.setText("Start server")
+            self.stop()
 
     def play(self):
-        url = f"rtsp://127.0.0.1:{self.RTSP_SERVER_PORT}/{self.mount_point}"
-        self.textoverlay.set_property("text", f"{url}")
-        self.player.setMedia(QMediaContent(QUrl(url)))
+        print(f"Media play: {self.url}")
+        self.player.setMedia(QMediaContent(QUrl(self.url)))
         self.player.play()
 
     def stop(self):
         print("Stop server")
+        # self.player.stop()
+        mp = self.server.get_mount_points()
+        mp.remove_factory(f"/{self.mount_point}")
+        rtsp_url = GstRtsp.RTSPUrl()
+        rtsp_url.host = self.RTSP_SERVER_HOST
+        rtsp_url.port = self.RTSP_SERVER_PORT
+        print(rtsp_url.get_request_uri())
+
+        # rtsp_url.set_port(self.RTSP_SERVER_PORT)
+        rtsp_media = ARtspMediaFactory.construct(self.media_factory, rtsp_url)
+
+        print(rtsp_media.get_element())
+
+        # print(rtsp_media.can_be_shared())
+        # mp.add_factory(f"{self.mount_point}", self.media_factory)
+
+
+    def on_timeout(self):
+        info = [
+            f"URL: {self.url}",
+            f"Time: {time.time()}",
+        ]
+        info_str = "\n".join(info)
+        self.textoverlay.set_property("text", f"{info_str}")
 
 
 if __name__ == '__main__':
